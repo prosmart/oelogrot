@@ -8,13 +8,22 @@
 
 #set -x 
 
-. /pt3n/bin/protopenv
+# Un-comment following line for debugging
+# ECHO=echo
+
+if [ -z "$PROTOP" ]; then
+    echo "PROTOP environment variable not set - exiting"
+    exit 1
+fi  
+
+. $PROTOP/bin/protopenv
 
 cd ${PROTOP}
 
 TMPDIR=${TMPDIR-/tmp}
 LOGDIR=${LOGDIR-/tmp}
 LGARCDIR=${LGARCDIR-/tmp}
+NOW='date "+%Y.%m.%d %H:%M:%S"'
 					# Check directories exist or create them
 [ ! -d ${TMPDIR} ] && mkdir ${TMPDIR}
 [ ! -d ${LOGDIR} ] && mkdir ${LOGDIR}
@@ -23,7 +32,7 @@ LGARCDIR=${LGARCDIR-/tmp}
 
 usage()					# usage function
 {
-   echo "Usage: $0 full_path_to_database"
+   echo "Usage: $0 all|friendly_name|full_path_to_database"
    exit 1
 }
 
@@ -41,7 +50,8 @@ roll_logs()				# roll the logs function
    ONLINE=
    DBNAME=`basename $DB`
 
-   proutil $DB -C holder >/dev/null 2>&1
+
+   $ECHO proutil $DB -C holder >/dev/null 2>&1
    retcode=$?  # this saves the return code
    case $retcode in
       0)  ;;
@@ -54,7 +64,13 @@ roll_logs()				# roll the logs function
           return $retcode
           ;;
    esac
-   { cp ${DB}.lg ${LGARCDIR}/${FRNAME}.lg.${WK};prolog ${DB} $ONLINE;RC=$?; } > ${RLOG} 2>&1
+      echo $(eval $NOW) Starting log rotation for $DB
+   {
+      echo $(eval $NOW) Starting log rotation for $DB
+      $ECHO cp ${DB}.lg ${LGARCDIR}/${FRNAME}.lg.${WK}
+      $ECHO prolog ${DB} $ONLINE;RC=$? 
+   } >> ${RLOG} 2>&1
+
    if ! [ ${RC} = 0 ]
    then
       ${PROTOP}/bin/sendalert.sh $FRNAME -msg="prolog failed during log roll" 
