@@ -218,6 +218,6 @@ then
    then
       LHIST=$((FLOGHIST*7))
       echo "Cleaning up any filtered archived log files older than $FLOGHIST weeks"
-      $ECHO find ${LGARCDIR} -name "*.lg.[0-9]*" -mtime +$LHIST -exec rm {} \;
+      $ECHO find ${LGARCDIR} -name "*.lgf.[0-9]*" -mtime +$LHIST -exec rm {} \;
    fi
 fi

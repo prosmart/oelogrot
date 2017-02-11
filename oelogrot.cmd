@@ -8,7 +8,10 @@
 
 REM Uncomment next line to debug
 REM set EKKO=echo
+set EKKO=
 
+REM Change false to true for debugging displays
+SET DEBUG=false
 
 :: Delay variable expansion to runtime
 
@@ -29,7 +32,6 @@ IF NOT EXIST "%PROTOP%\bin\protopenv.bat" (
 
 CALL %PROTOP%\bin\protopenv.bat
 
-
 IF "%TMPDIR%"=="" (
    ECHO ERROR: Temporary Directory TMPDIR not set - exiting
    GOTO :ABEND
@@ -43,6 +45,14 @@ IF "%LOGDIR%"=="" (
 IF "%LGARCDIR%"=="" (
    ECHO ERROR: Log file Archive Directory LGARCDIR not set - exiting
    GOTO :ABEND
+)
+
+IF "%DEBUG%"=="true" (
+   echo PROTOP = %PROTOP%
+   echo TMPDIR = %TMPDIR%
+   echo LOGDIR = %LOGDIR%
+   echo LGARCDIR = %LGARCDIR%
+   set /p x=Press enter to continue
 )
 
 cd "%PROTOP%"
@@ -76,6 +86,39 @@ IF "IP1"=="" (
    GOTO :ABEND
 )
 
+set FILT=
+
+IF NOT [%1] == [] IF "%2"=="-filter" (
+   SET "FILT=true"
+)
+
+set LOGROTCFG=%PROTOP%\etc\logrotate.cfg
+IF "%DEBUG%"=="true" (
+   echo FILT = %FILT%
+   set /p x=Press enter to continue
+)
+IF "%FILT%"=="true" (
+   IF EXIST %LOGROTCFG% (
+      %PROTOP%\ubin\grep -i "^loghist" <%LOGROTCFG% | %PROTOP%\ubin\sed -e "s/^.*=//" >tmpfile
+      SET /p LOGHIST=<tmpfile
+      %PROTOP%\ubin\grep -i "^floghist" <%LOGROTCFG% | %PROTOP%\ubin\sed -e "s/^.*=//" >tmpfile
+      SET /p FLOGHIST=<tmpfile
+   )
+   SET "tester="&for /f "delims=0123456789" %%i in ("%LOGHIST%") do set tester=%%i
+   if defined tester (SET LOGHIST=0)
+   SET "tester="&for /f "delims=0123456789" %%i in ("%FLOGHIST%") do set tester=%%i
+   if defined tester (SET FLOGHIST=0)
+   %PROTOP%\ubin\grep "^(.*)$" %LOGROTCFG% > %LOGROTCFG%.tmp
+)
+
+
+IF "%DEBUG%"=="true" (
+   echo FILT = %FILT%
+   echo LOGHIST = %LOGHIST%
+   echo FLOGHIST = %FLOGHIST%
+   set/p x=Press enter to continue
+)
+
 set DB=
 set FRNAME=
 
@@ -98,9 +141,11 @@ IF "%IP1%"=="all" (
    FOR /F "tokens=1,2 delims=|" %%A IN (%PROTOP%\etc\dblist.cfg) DO (
       set FRNAME=%%A
       set DB=%%B
-      IF NOT "!FRNAME:~0,1!"=="#" CALL :SUB_ROLL
+      IF NOT "!FRNAME:~0,1!"=="#" (
+         CALL :SUB_ROLL
+      )
    )
-   GOTO :END
+   GOTO :THIN
 )
 
 ::	Is it a "friendly name" defined in etc/dblist.cfg?
@@ -109,12 +154,32 @@ FOR /F "tokens=1,2 delims=|" %%A IN (%PROTOP%\etc\dblist.cfg) DO (
    set DB=%%B
    IF "%IP1%"=="!FRNAME!" (
       CALL :SUB_ROLL
+      GOTO :THIN
    )
 )
+
 
 IF EXIST %IP1% (
    SET DB=%IP1%
    CALL :SUB_ROLL
+)
+
+:: Are we thinning the herd?
+:THIN
+set /a LOGDAYS="%LOGHIST% * 7"
+set /a FLOGDAYS="%FLOGHIST% * 7"
+
+IF "%FILT%"=="true" (
+   IF NOT "%LOGHIST%"=="0" (
+      echo Cleaning up any archived log files older than %LOGHIST% weeks
+      echo Cleaning up any archived log files older than %LOGHIST% weeks >>%RLOG% 2>&1
+      forfiles /p "%LGARCDIR%" /m *.lg.* /c "cmd /c del @path" /d -%LOGDAYS% 2>NUL
+   )
+   IF NOT "%FLOGHIST%"=="0" (
+      echo Cleaning up any filtered archived log files older than %FLOGHIST% weeks
+      echo Cleaning up any archived log files older than %FLOGHIST% weeks >>%RLOG% 2>&1
+      forfiles /p "%LGARCDIR%" /m *.lgf.* /c "cmd /c del @path" /d -%FLOGDAYS% 2>NUL
+   )
 )
    
 GOTO :END
@@ -158,7 +223,7 @@ GOTO :END
 
    :CONTINUE
 
-   %EKKO% copy %DB%.lg %LGARCDIR%\%FRNAME%.lg.%WK% >NUL 2>&1
+   %EKKO% copy %DB%.lg %LGARCDIR%\%FRNAME%.lg.%WK% >> %RLOG% 2>&1
 
    IF ERRORLEVEL 1 (
       echo Copy of database log %DB%.lg failed - exiting
@@ -171,6 +236,12 @@ GOTO :END
       %PROTOP%\bin\sendalert %FRNAME% -msg="prolog failed during log roll"
    )
 
+
+   IF "%FILT%"=="true" (
+      IF EXIST %LOGROTCFG%.tmp (
+         %PROTOP%\ubin\grep -v -f %LOGROTCFG%.tmp %LGARCDIR%\%FRNAME%.lg.%WK% > %LGARCDIR%\%FRNAME%.lgf.%WK%
+      )
+   )
 
    EXIT /B
 
